@@ -36,11 +36,11 @@ print = functools.partial(print, flush=True)
 
 # ==================== 配置区 ====================
 # 请在运行脚本时根据提示输入以下信息（不再硬编码，方便开源）
-API_KEY = "API KEY"
+API_KEY = "" #APIKEY
 BASE_URL = "模型提供地址"
 MODEL = "模型名称"  # 免费模型，速度快
 
-COURSE_URL = "课程链接"
+COURSE_URL = "" #课程链接
 # =================================================
 
 client = None
