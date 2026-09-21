@@ -327,13 +327,21 @@ def run():
     print("提示：本项目已开源，不包含任何个人信息。请在使用时输入自己的信息。")
     print("-" * 60)
     
-    # 1. 获取 API Key
+    print("\n--- 模型配置 ---")
     if not API_KEY:
-        API_KEY = input("👉 请输入你的智谱 API Key（输入后按回车）: ").strip()
-        
-    # 2. 获取课程链接
+        API_KEY = input("👉 请输入你的 API Key: ").strip()
+    if not BASE_URL:
+        BASE_URL = input("👉 请输入 API 接口地址 (直接回车默认使用智谱): ").strip()
+        if not BASE_URL:
+            BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+    if not MODEL:
+        MODEL = input("👉 请输入模型名称 (直接回车默认使用 glm-4-flash): ").strip()
+        if not MODEL:
+            MODEL = "glm-4-flash"
+
+    print("\n--- 课程配置 ---")
     if not COURSE_URL:
-        COURSE_URL = input("👉 请输入你的学习通课程链接（输入后按回车）: ").strip()
+        COURSE_URL = input("👉 请输入你的学习通课程链接: ").strip()
         
     if not API_KEY or not COURSE_URL:
         print("❌ 错误：API Key 或 课程链接 不能为空，脚本退出！")
