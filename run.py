@@ -20,6 +20,7 @@ import sys
 import time
 import re
 import functools
+import random  # ★ 新增：用于模拟人类随机行为
 from playwright.sync_api import sync_playwright
 from openai import OpenAI
 
@@ -137,49 +138,117 @@ def handle_quiz(page):
         except Exception as e:
             print(f"    处理第{i+1}题出错: {e}")
 
+    # ★ 修复：提交测验逻辑（防超时、防遮挡、防弹窗延迟）
     try:
         submit_btn = quiz_frame.locator("text='提交'").first
         if submit_btn.count() > 0:
-            submit_btn.click()
+            submit_btn.click(timeout=5000, force=True)
             print("  [测验] 已点击初次提交")
-            time.sleep(2)
+            time.sleep(3) # 稍微多等一会儿，让弹窗加载
             
-            confirm_btn = page.locator(".layui-layer-btn0")
-            if confirm_btn.count() > 0:
-                confirm_btn.first.click()
-                print("  [测验] 已点击弹窗确认(.layui-layer-btn0)")
-                time.sleep(2)
+            # 等待弹窗出现 (超星常见弹窗类名 layui-layer)
+            try:
+                page.wait_for_selector(".layui-layer", timeout=3000)
+            except:
+                pass
+
+            confirm_success = False
+            
+            # 优先在弹窗内部寻找按钮
+            popup_btn = page.locator(".layui-layer-btn0, .layui-layer-btn a").filter(has_text=re.compile(r"提交|确定|确认")).first
+            if popup_btn.count() > 0:
+                try:
+                    popup_btn.click(timeout=3000, force=True)
+                    print("  [测验] 已点击弹窗确认按钮 (精准定位)")
+                    confirm_success = True
+                except:
+                    popup_btn.evaluate("el => el.click()")
+                    print("  [测验] JS强制点击弹窗确认按钮")
+                    confirm_success = True
             else:
-                confirmed = False
+                # 兜底逻辑：如果找不到特定类名，遍历所有 frame 寻找弹窗文本
                 for f in page.frames:
-                    for btn_text in ["提交", "确定", "确认"]:
-                        c_btn = f.get_by_text(btn_text, exact=True)
+                    for btn_text in ["确定", "确认", "提交"]:
+                        # 严格限制在弹窗容器内，防止点到背景按钮
+                        c_btn = f.locator(f".layui-layer:has-text('{btn_text}'), .layui-layer-btn:has-text('{btn_text}')").first
                         if c_btn.count() > 0:
-                            c_btn.first.click()
-                            print(f"  [测验] 已点击弹窗中的'{btn_text}'")
-                            confirmed = True
-                            time.sleep(2)
-                            break
-                    if confirmed:
+                            try:
+                                c_btn.click(timeout=2000, force=True)
+                                print(f"  [测验] 已点击弹窗中的'{btn_text}' (兜底)")
+                                confirm_success = True
+                                break
+                            except:
+                                c_btn.evaluate("el => el.click()")
+                                print(f"  [测验] JS强制点击弹窗中的'{btn_text}' (兜底)")
+                                confirm_success = True
+                                break
+                    if confirm_success:
                         break
+                        
+            if confirm_success:
+                time.sleep(3)
+            else:
+                print("  ⚠️ [测验] 未能找到或点击弹窗确认按钮，请手动检查！")
+                
     except Exception as e:
         print(f"  提交测验出错: {e}")
 
     return True
 
 def handle_document(page):
+    # ★ 修复：文档滑动逻辑（动态高度、真实滚动容器、随机延迟）
     print("  [检测文档] 正在尝试阅读...")
-    try:
-        for f in page.frames:
-            if f.locator(".pdf, .doc, .text-content, #pdfContainer, .reader").count() > 0:
-                for _ in range(5):
-                    f.evaluate("window.scrollBy(0, 500);")
-                    time.sleep(1)
+    found_doc = False
+    doc_selectors = [".pdfViewer", "#panView", ".reader", ".doc-content", "#pdfContainer", ".text-content", "#content", ".pdf", ".doc"]
+    
+    for f in page.frames:
+        try:
+            if f.locator(",".join(doc_selectors)).count() > 0:
+                found_doc = True
+                print("  [文档] 找到文档容器，开始模拟真实阅读...")
+                
+                # 获取文档总高度，动态计算滚动次数
+                total_height = f.evaluate("document.body.scrollHeight || document.documentElement.scrollHeight")
+                if total_height < 1000:
+                    total_height = 3000 # 兜底长度
+                
+                # 每次滑动 300-600px，计算所需次数
+                scroll_steps = int(total_height / 400) + 5
+                
+                for i in range(scroll_steps):
+                    # 1. 模拟鼠标滚轮
+                    page.mouse.wheel(0, random.randint(300, 600))
+                    
+                    # 2. 强制操作滚动容器（防止滚动条不在 window 上）
+                    f.evaluate(f"""
+                        let scrollEl = document.querySelector('{doc_selectors[0]}') || 
+                                       document.querySelector('{doc_selectors[1]}') || 
+                                       document.querySelector('{doc_selectors[2]}');
+                        if (scrollEl) {{
+                            scrollEl.scrollTop += {random.randint(300, 600)};
+                        }} else {{
+                            window.scrollBy(0, {random.randint(300, 600)});
+                        }}
+                    """)
+                    
+                    # 3. 随机移动鼠标，模拟阅读时的轻微滑动
+                    try:
+                        page.mouse.move(random.randint(100, 800), random.randint(100, 600))
+                    except: pass
+                    
+                    # 4. 随机停顿，模拟人类阅读速度
+                    time.sleep(random.uniform(1.5, 3.5))
+                    
+                # 最后确保滑到底部
                 f.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(3)
                 print("  [文档] 模拟阅读翻页完成")
                 return True
-    except: pass
+        except Exception as e:
+            pass
+            
+    if not found_doc:
+        print("  [文档] 未检测到明显的文档容器，可能无需阅读或选择器需更新")
     return False
 
 def process_chapter(page, chapter_num, played_src):
